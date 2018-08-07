@@ -58,7 +58,7 @@ def divergent(genos, outgroup_base):
 			return 1
 		else:
 			return 0
-	if len(set(genos)) > 1:
+	elif len(set(genos)) > 1:
 
 		if random.choice(genos) != outgroup_base:
 			return 1
@@ -67,29 +67,42 @@ def divergent(genos, outgroup_base):
 
 def testCpG( cpg_status , index):
 	if set( [cpg_status[0][index], cpg_status[1][index], cpg_status[2][index] ]) == set(['0']):
+
 		return True
 	else:
 		return False
 
-def analyse_chunk(vcf_chunk, divergence, cpg_status, min_QUAL = 20, max_Depth = 700, min_GQ = 15, N = 10):#,  outgroup_1, outgroup_2, cpg_outgroup_1, cpg_outgroup_2, exclude_cpg = False,):
+def analyse_chunk(vcf_chunk, start, divergence, cpg_status, min_QUAL = 20, max_Depth = 700, min_GQ = 15, N = 10):#,  outgroup_1, outgroup_2, cpg_outgroup_1, cpg_outgroup_2, exclude_cpg = False,):
 	all_freqs = []
 	ncpg_freqs = []
 	index = 0
-
+        previous_POS = start-1
+        print 'starting at base:',previous_POS
 	diverged_all_1 = 0 ## Is outgroup 1 divergent (all sites)?
 	diverged_all_2 = 0 ## Is outgroup 2 divergent (all sites)?
 	diverged_ncpg_1 = 0 ## Is outgroup 1 divergent (ncpg sites)?
 	diverged_ncpg_2 = 0 ## Is outgroup 2 divergent (ncpg sites)?
-
+        current_position = 0
 	for i in vcf_chunk:
-		fasta_pos = index
+                
+#                print previous_POS,i.POS
+                while i.POS != start + current_position:
+                        current_position +=1
+  #              print i.POS, start + current_position
+                
+                fasta_pos = current_position
+#                index +=1
 
-		index +=1 
+                if divergence[0][fasta_pos] =='.' or divergence[1][fasta_pos] =='.':
+                        continue
+                #print i.REF, divergence[0][fasta_pos], divergence[1][fasta_pos]
+
+#		index +=1
 		allele_dict = {'0' : i.REF}
-		if len(i.ALT)> 1:
-			print 'more than 1 alternate allele'
-			print 'I only analyse biallelic sites'
-			continue
+#		if len(i.ALT)> 1:
+#			print 'more than 1 alternate allele'
+#			print 'I only analyse biallelic sites'
+#			continue
 		if i.ALT != [None]:
 
 			variant = True
@@ -103,43 +116,45 @@ def analyse_chunk(vcf_chunk, divergence, cpg_status, min_QUAL = 20, max_Depth = 
 		if indel_quest(i): continue
 		## Does the number of called individuals match the requirement
 		if i.num_called < N: continue
-		if i.INFO['DP'][0] > max_Depth: continue
 
-		
+		if i.INFO['DP'] > max_Depth: continue
 
 		if variant:
-			if float(i.INFO['ExcessHet'][0]) > 30: continue
+			if float(i.INFO['ExcessHet']) > 30: continue
 			## If the site is a variant AND the min depth matches the min DP and GQ
 			genos = getGenotypes( [j['GT'] for j in i.samples if j['GQ'] >= min_GQ ], allele_dict ) 
 			if len(genos) < N: continue
 		elif not variant:
 			genos = [str(i.REF) , str(i.REF)] * N
-		print i.REF, genos
+		
 		all_frequency = genos2freqs(genos)
 
 		if all_frequency != None:
 			all_freqs.append( all_frequency )
 
-		diverged_all_1 += divergent(genos, divergence[0][fasta_pos])
-		diverged_all_2 += divergent(genos, divergence[1][fasta_pos])
+		diverged_all_1 += divergent(genos, divergence[0][fasta_pos].upper())
+		diverged_all_2 += divergent(genos, divergence[1][fasta_pos].upper())
 		## Here you add a CpG-prone filter 
 
-		if testCpG( cpg_status , fasta_pos): continue
+		if testCpG( cpg_status , fasta_pos):
+                        continue
 
-		ncpg_freq = genos2freqs(genos)
+		ncpg_freq = all_frequency
 
-		if ncpg_freq:
-			ncpg_freq =  all_frequency 
-			if ncpg_freq: ncpg_freqs.append(all_frequency)
-			diverged_ncpg_1 += divergent( genos, divergence[0][fasta_pos] )
-			diverged_ncpg_2 += divergent( genos, divergence[1][fasta_pos] )
+		if ncpg_freq != None:
+			ncpg_freq =  all_frequency
+                        #print all_frequency
+			ncpg_freqs.append(all_frequency)
+			diverged_ncpg_1 += divergent( genos, divergence[0][fasta_pos].upper() )
+			diverged_ncpg_2 += divergent( genos, divergence[1][fasta_pos].upper() )
 
 		
 
 	all_sfs = SFS_from_all_frequencies( all_freqs, N )
 	ncpg_sfs = SFS_from_all_frequencies( ncpg_freqs, N )
 	
-	print all_sfs, diverged_all_1, diverged_all_2
+	print all_sfs, float(diverged_all_1)/sum(all_sfs), float(diverged_all_2)/sum(all_sfs)
+        print ncpg_sfs, float(diverged_ncpg_1)/sum(ncpg_sfs), float(diverged_ncpg_2)/sum(ncpg_sfs)
 	return
 
 def concatBed(bed_line):
@@ -193,8 +208,8 @@ def main():
 
 	args = parser.parse_args()
  
-	testChunks = [['chr19',10000562,10000868] ,
-			['chr19',10000962,10000968]]
+	testChunks = [['chr19',20000000,20020000] ,
+			['chr19',10000000,10020000]]
 	
 	vcf_object = vcf.Reader(open(args.vcf, 'r'))
 	outgroup_1_fasta = pysam.FastaFile(args.outgroup_1)	
@@ -216,7 +231,7 @@ def main():
 				outgroup_2_cpg_fasta.fetch(i[0],start = i[1]-1, end = i[2]) ]
 
 ## PyVCF is 'half-open' so the first position is not included in the bit that is fetched from the file
-		analyse_chunk( vcf_object.fetch(i[0],start = i[1]-1, end = i[2])  , divergence, cpg_status)
+		analyse_chunk( vcf_object.fetch(i[0],start = i[1]-1, end = i[2])  , i[1], divergence, cpg_status)
 
 
 
