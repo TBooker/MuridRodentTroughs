@@ -1,5 +1,5 @@
 #### Script to generate a table of positions and chromosomes with CpG status and alleles for an ingroup and two outgroups
-import argparse
+import argparse, pysam
 from Bio import SeqIO
 import pandas as pd
 
@@ -37,15 +37,22 @@ def main():
 		help = "The name for the output file")
 	args = parser.parse_args()
 
+
 	seqs = []
 	for allele_file_i in args.alleles:
-		allele_record_dict = SeqIO.to_dict(SeqIO.parse(allele_file_i, "fasta"))
-		seqs.append( allele_record_dict[args.chrom].seq )
+		fasta = pysam.FastaFile(allele_file_i)	
+		seqs.append([i.upper() for i in fasta.fetch(args.chrom)])	
+#		allele_record_dict = SeqIO.to_dict(SeqIO.parse(allele_file_i, "fasta"))
+#		seqs.append( allele_record_dict[args.chrom].seq )
+	
 		
 	cpgs = []
 	for cpg_file_i in args.cpg:
-		cpg_record_dict = SeqIO.to_dict(SeqIO.parse(cpg_file_i, "fasta"))
-		cpgs.append( cpg_record_dict[args.chrom].seq )
+		cpg_fasta = pysam.FastaFile(cpg_file_i)	
+		cpgs.append([i.upper() for i in cpg_fasta.fetch(args.chrom)])	
+
+#		cpg_record_dict = SeqIO.to_dict(SeqIO.parse(cpg_file_i, "fasta"))
+#		cpgs.append( cpg_record_dict[args.chrom].seq )
 	dfs = []
 	names = []
 	for i in range(len(seqs)):
